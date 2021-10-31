@@ -1,0 +1,5 @@
+.env
+logs
+yarn-error.log
+node_modules
+bundle.js
