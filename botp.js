@@ -4,35 +4,38 @@ import prompt from 'prompt';
 import SimpleNodeLogger from 'simple-node-logger';
 import path from 'path';
 import pluginStealth from 'puppeteer-extra-plugin-stealth';
+import fs from 'fs';
 
 puppeteer.use(pluginStealth());
 
-const claimLinks = `
-http://localhost:4002/code/57024
-http://localhost:4002/code/82879
-http://localhost:4002/code/34596
-http://localhost:4002/code/97161
-http://localhost:4002/code/50566
-http://localhost:4002/code/60637
-http://localhost:4002/code/32187
-http://localhost:4002/code/67941
-http://localhost:4002/code/94316
-http://localhost:4002/code/59194
-http://localhost:4002/code/21202
-http://localhost:4002/code/76950
-http://localhost:4002/code/82996
-http://localhost:4002/code/58127
-http://localhost:4002/code/71221
-http://localhost:4002/code/30306
-http://localhost:4002/code/41087
-http://localhost:4002/code/76105
-http://localhost:4002/code/30287
-http://localhost:4002/code/51459
-http://localhost:4002/code/21728
-`;
-const claimLinksArr = [...claimLinks.match(/https?:\/\/.*?( |\n)/g)].map((link) => link.slice(0, -1));
+const currentClaimLinks = fs.readFileSync('currentLINKS.db', 'utf8');
+const usedClaimLinks = fs.readFileSync('usedLINKS.db', 'utf8');
+
+const linkPattern = /https?:\/\/.*?( |\n)/gms;
+const currentClaimLinksArr = currentClaimLinks.match(linkPattern)
+  ? [...currentClaimLinks.match(linkPattern)].map((link) => link.slice(0, -1))
+  : [];
+let usedClaimLinksArr = usedClaimLinks.match(linkPattern)
+  ? [...usedClaimLinks.match(linkPattern)].map((link) => link.slice(0, -1))
+  : [];
+let memClaimLinksArr = currentClaimLinksArr.filter((link) => !usedClaimLinksArr.includes(link));
+let memUsedClaimLinksArr = [];
 
 const gatherSpace = 'https://gather.town/app/kjTwR9YguIVWMylX/Yup';
+
+const flushUsedClaimLinks = () => {
+  memUsedClaimLinksArr = [...usedClaimLinksArr, ...memUsedClaimLinksArr];
+  fs.writeFileSync('usedLINKS.db', memUsedClaimLinksArr.join('\n'), {
+    encoding: 'utf8',
+    flag: 'w+',
+  });
+  memUsedClaimLinksArr = [];
+  const usedClaimLinks = fs.readFileSync('usedLINKS.db', 'utf8');
+  usedClaimLinksArr = usedClaimLinks.match(linkPattern)
+    ? [...usedClaimLinks.match(linkPattern)].map((link) => link.slice(0, -1))
+    : [];
+  memClaimLinksArr = currentClaimLinksArr.filter((link) => !usedClaimLinksArr.includes(link));
+};
 
 function createLogger(enableConsole, opts) {
   // opts is the normal opts you'd pass in like logFilePath or timestampFormat
@@ -68,21 +71,37 @@ async function typeInInputElement(page, inputSelector, text) {
   );
 }
 
-const sendPoapMsgFn = async (page) => {
+const isUserListOpen = async (page) => {
+  return (await page.$$('.LeftBarChatRecipientModal-root > button')).length !== 0;
+};
+
+const toogleUserList = async (page) => {
   const dropdown = await page.waitForSelector('.LeftBarChatInput-dropdown');
   await dropdown.click();
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(450);
+};
 
+const sendPoapMsgFn = async (page, skip = '') => {
+  let skipArr = [];
+  if (skip.length > 0) skipArr = skip.split(' ');
+  if (!(await isUserListOpen(page))) await toogleUserList(page);
   const buttons = await page.$$('.LeftBarChatRecipientModal-root > button');
-  //console.log(buttons);
   let lenght = buttons.length;
   for (let i = 3; i < lenght + 1; i++) {
+    if (i !== 3) await toogleUserList(page);
     const button = await page.$(`.LeftBarChatRecipientModal-root > button:nth-child(${i})`);
-    await button.click();
-    await page.waitForTimeout(200);
     const userEl = await button.$('div p');
     let user = await page.evaluate((el) => el.textContent, userEl);
-    const link = claimLinksArr[i - 3];
+    lenght = (await page.$$('.LeftBarChatRecipientModal-root > button')).length;
+    if (skipArr.includes(user)) {
+      logger.info(`Skipping user: ${user}`);
+      await toogleUserList(page);
+      continue;
+    }
+    await button.click();
+    await page.waitForTimeout(200);
+    const link = memClaimLinksArr[i - 3];
+    memUsedClaimLinksArr.push(link);
     const code = link.substring(link.lastIndexOf('/') + 1);
     const msg = ` [ATTENTION: ${user} ] Unique POAP claim links is: [ ${link} ] Code [ ${code} ] is automatically used for claim. `;
     logger.info(msg);
@@ -90,11 +109,51 @@ const sendPoapMsgFn = async (page) => {
     const input = await page.waitForSelector('input[placeholder="Message..."]');
     await input.focus();
     await page.keyboard.press('Enter');
+  }
+  flushUsedClaimLinks();
+};
+
+const sendPoapToUserName = async (page, userName) => {
+  if (!(await isUserListOpen(page))) await toogleUserList(page);
+  const buttons = await page.$$('.LeftBarChatRecipientModal-root > button');
+  let userButton = false;
+  for (const button of buttons) {
+    const userEl = await button.$('div p');
+    let user = await page.evaluate((el) => el.textContent, userEl);
+    if (user === userName) {
+      userButton = button;
+      break;
+    }
+  }
+  if (userButton) {
+    await userButton.click();
+    await page.waitForTimeout(200);
+    const link = memClaimLinksArr.shift();
+    memUsedClaimLinksArr.push(link);
+    const code = link.substring(link.lastIndexOf('/') + 1);
+    const msg = ` [ATTENTION: ${userName} ] Unique POAP claim links is: [ ${link} ] Code [ ${code} ] is automatically used for claim. `;
+    logger.info(msg);
+    await typeInInputElement(page, 'input[placeholder="Message..."]', msg);
+    const input = await page.waitForSelector('input[placeholder="Message..."]');
+    await input.focus();
+    await page.keyboard.press('Enter');
+    flushUsedClaimLinks();
+    console.log(`Sent poap to user ${userName}`);
+  } else {
+    logger.error(`User ${userName} not found`);
+    console.log(`User ${userName}  not found`);
     const dropdown = await page.waitForSelector('.LeftBarChatInput-dropdown');
     await dropdown.click();
-    await page.waitForTimeout(250);
-    lenght = (await page.$$('.LeftBarChatRecipientModal-root > button')).length;
+    await page.waitForTimeout(500);
   }
+  await isUserListOpen(page);
+};
+
+const dance5Sec = async (page) => {
+  if (await isUserListOpen(page)) await toogleUserList(page);
+  await page.keyboard.down('z');
+  await page.waitForTimeout(5000);
+  await page.keyboard.up('z');
 };
 
 (async (_) => {
@@ -114,7 +173,7 @@ const sendPoapMsgFn = async (page) => {
     headless: false,
     args: ['--no-sandbox'],
     userDataDir,
-    ignoreDefaultArgs: ['--disable-extensions', '--enable-automation', '--mute-audio'],
+    ignoreDefaultArgs: ['--disable-extensions', '--enable-automation'],
   };
   const browser = await puppeteer.launch(options);
   const page = await browser.newPage();
@@ -141,6 +200,17 @@ const sendPoapMsgFn = async (page) => {
         process.exit();
       case 'send-poap':
         await sendPoapMsgFn(page);
+        break;
+      case 'send-poap-to':
+        const { user } = await prompt.get(['user']);
+        await sendPoapToUserName(page, user);
+        break;
+      case 'send-poap-skip':
+        const { users } = await prompt.get(['users']);
+        await sendPoapMsgFn(page, users);
+        break;
+      case 'dance':
+        await dance5Sec(page);
         break;
     }
   }

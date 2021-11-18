@@ -7,7 +7,7 @@ puppeteer.use(pluginStealth());
 
 const gatherSpace = 'https://gather.town/app/kjTwR9YguIVWMylX/Yup';
 
-const botArmySize = 8;
+const botArmySize = 40;
 const botBaseName = 'BOT';
 const BotPages = [];
 
@@ -57,7 +57,7 @@ async function joinGather(page) {
     }
     const options = {
       executablePath,
-      headless: false,
+      headless: true,
       args: ['--no-sandbox'],
       userDataDir,
       ignoreDefaultArgs: ['--disable-extensions', '--enable-automation', '--mute-audio'],

@@ -3,3 +3,6 @@ logs
 yarn-error.log
 node_modules
 bundle.js
+/links
+currentLINKS.db
+usedLINKS.db
