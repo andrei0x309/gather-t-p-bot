@@ -171,9 +171,9 @@ const dance5Sec = async (page) => {
   const options = {
     executablePath,
     headless: false,
-    args: ['--no-sandbox'],
+    args: ['--no-sandbox', '--mute-audio'],
     userDataDir,
-    ignoreDefaultArgs: ['--disable-extensions', '--enable-automation'],
+    ignoreDefaultArgs: ['--enable-automation'],
   };
   const browser = await puppeteer.launch(options);
   const page = await browser.newPage();
