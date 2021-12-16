@@ -182,13 +182,12 @@ const dance5Sec = async (page) => {
   await page.goto(gatherSpace);
 
   const jonBtn = await page.waitForSelector('button[kind="primary"]');
+  const waitForNewPage = page.waitForNavigation({ waitUntil: 'networkidle2' });
   await jonBtn.click();
-  await page.waitForNavigation();
-
-  const commentsBtn = await page.waitForSelector('svg[data-icon="comments"]');
+  await waitForNewPage;
+  const commentsBtn = await page.waitForSelector('svg[data-icon="comments"]', {visible: true});
   await commentsBtn.click();
   await page.waitForTimeout(700);
-
   prompt.start();
 
   for (;;) {
